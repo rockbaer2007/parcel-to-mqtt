@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import paho.mqtt.client as mqtt
 import requests
@@ -18,11 +19,27 @@ LOG = logging.getLogger("parcel_to_mqtt")
 DEFAULT_BASE_TOPIC = "parcel"
 DEFAULT_DISCOVERY_PREFIX = "homeassistant"
 MAX_DEFAULT_PARCELS = 6
+DHL_AUTH_URL = (
+    "https://login.dhl.de/af5f9bb6-27ad-4af4-9445-008e7a5cddb8/login/authorize"
+    "?redirect_uri=dhllogin://de.deutschepost.dhl/login"
+    "&state=eyJycyI6dHJ1ZSwicnYiOmZhbHNlLCJmaWQiOiJhcHAtbG9naW4tbWVoci1mb290ZXIiLCJoaWQiOiJhcHAtbG9naW4tbWVoci1oZWFkZXIiLCJycCI6ZmFsc2V9"
+    "&client_id=83471082-5c13-4fce-8dcb-19d2a3fca413"
+    "&response_type=code"
+    "&scope=openid%20offline_access"
+    "&claims=%7B%22id_token%22:%7B%22email%22:null,%22post_number%22:null,%22twofa%22:null,%22service_mask%22:null,%22deactivate_account%22:null,%22last_login%22:null,%22customer_type%22:null,%22display_name%22:null,%22data_confirmation_required%22:null%7D%7D"
+    "&nonce=&login_hint=&prompt=login&ui_locales=de-DE"
+    "&code_challenge=MAhrhXXZP-Owy-R7ruyB7Fn-Z8ODW6qxCoHg4uXELCw"
+    "&code_challenge_method=S256"
+)
+DHL_CODE_VERIFIER = "zmVs5AKfGvv45a9aUvuOid9a_erOirp7XL1sn9kWT_o"
+DHL_CLIENT_ID = "83471082-5c13-4fce-8dcb-19d2a3fca413"
+DHL_SESSION_FILE = "/data/dhl_session.json"
 
 
 @dataclass(frozen=True)
 class Options:
     dhl_tracking_numbers: list[str]
+    dhl_login_code: str
     hermes_tracking_numbers: list[str]
     gls_tracking_numbers: list[str]
     gls_postal_code: str
@@ -86,13 +103,18 @@ class DhlClient:
         })
 
     def poll(self) -> list[Parcel]:
-        if not self.options.dhl_tracking_numbers:
+        tracking_numbers = list(self.options.dhl_tracking_numbers)
+        account_numbers = self.fetch_account_tracking_numbers()
+        for tracking_number in account_numbers:
+            if tracking_number and tracking_number not in tracking_numbers:
+                tracking_numbers.append(tracking_number)
+        if not tracking_numbers:
             return []
         try:
             response = self.session.get(
                 "https://www.dhl.de/int-verfolgen/data/search",
                 params={
-                    "piececode": ",".join(self.options.dhl_tracking_numbers),
+                    "piececode": ",".join(tracking_numbers),
                     "noRedirect": "true",
                     "language": "de",
                     "cid": "app",
@@ -114,6 +136,125 @@ class DhlClient:
         except Exception as exc:
             LOG.warning("Could not fetch DHL parcel data: %s", exc)
             return []
+
+    def fetch_account_tracking_numbers(self) -> list[str]:
+        session_data = self.ensure_account_session()
+        if not session_data:
+            return []
+        try:
+            self.session.cookies.set("dhli", session_data["id_token"], domain=".dhl.de")
+            response = self.session.get(
+                "https://www.dhl.de/int-verfolgen/data/search",
+                params={"noRedirect": "true", "language": "de", "cid": "app"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if self.options.log_response_details:
+                LOG.info("DHL account list returned: %s", json.dumps(data, ensure_ascii=False, sort_keys=True)[:8000])
+            shipments = data.get("sendungen", []) if isinstance(data, dict) else []
+            if not isinstance(shipments, list):
+                return []
+            return [
+                str(item.get("id") or "").strip()
+                for item in shipments
+                if isinstance(item, dict)
+                and str(item.get("id") or "").strip()
+                and value_at(item, ["sendungsinfo", "sendungsliste"]) != "ARCHIVIERT"
+            ]
+        except Exception as exc:
+            LOG.warning("Could not fetch DHL account parcel list: %s", exc)
+            return []
+
+    def ensure_account_session(self) -> dict[str, Any] | None:
+        session_data = self.load_session()
+        if session_data and session_data.get("refresh_token"):
+            refreshed = self.refresh_session(session_data["refresh_token"])
+            if refreshed:
+                return refreshed
+        if self.options.dhl_login_code:
+            return self.login_with_code(self.options.dhl_login_code)
+        return None
+
+    def login_with_code(self, login_code: str) -> dict[str, Any] | None:
+        code = dhl_code_from_url(login_code)
+        if not code:
+            LOG.warning("DHL login code is not valid. Open %s and paste the dhllogin:// URL into dhl_login_code.", DHL_AUTH_URL)
+            return None
+        try:
+            response = self.session.post(
+                "https://login.dhl.de/af5f9bb6-27ad-4af4-9445-008e7a5cddb8/login/token",
+                headers={
+                    "Host": "login.dhl.de",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json, text/plain, */*",
+                    "Origin": "https://login.dhl.de",
+                    "Authorization": "Basic ODM0NzEwODItNWMxMy00ZmNlLThkY2ItMTlkMmEzZmNhNDEzOg==",
+                    "User-Agent": "DHLPaket_PROD/1367 CFNetwork/1240.0.4 Darwin/20.6.0",
+                    "Accept-Language": "de-de",
+                },
+                data={
+                    "redirect_uri": "dhllogin://de.deutschepost.dhl/login",
+                    "grant_type": "authorization_code",
+                    "code_verifier": DHL_CODE_VERIFIER,
+                    "code": code,
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            session_data = response.json()
+            self.save_session(session_data)
+            LOG.info("DHL account login successful. The stored refresh token will be reused on the next starts.")
+            return session_data
+        except Exception as exc:
+            LOG.warning("DHL account login failed: %s", exc)
+            return None
+
+    def refresh_session(self, refresh_token: str) -> dict[str, Any] | None:
+        try:
+            response = self.session.post(
+                "https://login.dhl.de/af5f9bb6-27ad-4af4-9445-008e7a5cddb8/login/token",
+                headers={
+                    "Host": "login.dhl.de",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json, text/plain, */*",
+                    "Origin": "https://login.dhl.de",
+                    "User-Agent": "DHLPaket_PROD/1367 CFNetwork/1240.0.4 Darwin/20.6.0",
+                    "Accept-Language": "de-de",
+                },
+                data={
+                    "client_id": DHL_CLIENT_ID,
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            session_data = response.json()
+            self.save_session(session_data)
+            return session_data
+        except Exception as exc:
+            LOG.info("DHL refresh token could not be used: %s", exc)
+            return None
+
+    @staticmethod
+    def load_session() -> dict[str, Any] | None:
+        try:
+            if os.path.exists(DHL_SESSION_FILE):
+                with open(DHL_SESSION_FILE, encoding="utf-8") as handle:
+                    data = json.load(handle)
+                return data if isinstance(data, dict) else None
+        except Exception as exc:
+            LOG.warning("Could not read stored DHL session: %s", exc)
+        return None
+
+    @staticmethod
+    def save_session(session_data: dict[str, Any]) -> None:
+        try:
+            with open(DHL_SESSION_FILE, "w", encoding="utf-8") as handle:
+                json.dump(session_data, handle)
+        except Exception as exc:
+            LOG.warning("Could not store DHL session: %s", exc)
 
     @staticmethod
     def normalize_parcel(item: dict[str, Any]) -> Parcel:
@@ -450,6 +591,14 @@ def parse_dhl_numbers(value: Any) -> list[str]:
     return parse_tracking_numbers(value)
 
 
+def dhl_code_from_url(value: str) -> str:
+    text = str(value or "").strip()
+    if not text.startswith("dhllogin://"):
+        return ""
+    query = parse_qs(urlparse(text).query)
+    return first_text(*(query.get("code") or []))
+
+
 def load_options() -> Options:
     raw = {}
     options_file = os.environ.get("OPTIONS_FILE", "/data/options.json")
@@ -459,6 +608,7 @@ def load_options() -> Options:
     mqtt = load_mqtt_service()
     return Options(
         dhl_tracking_numbers=parse_tracking_numbers(raw.get("dhl_tracking_numbers", "")),
+        dhl_login_code=str(raw.get("dhl_login_code", "")).strip(),
         hermes_tracking_numbers=parse_tracking_numbers(raw.get("hermes_tracking_numbers", "")),
         gls_tracking_numbers=parse_tracking_numbers(raw.get("gls_tracking_numbers", "")),
         gls_postal_code=str(raw.get("gls_postal_code", "")).strip(),

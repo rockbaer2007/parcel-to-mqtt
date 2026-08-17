@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+- Added optional DHL account login through a `dhllogin://` browser redirect URL.
+- Stored the DHL refresh token in the app data folder and reused it on restart.
+- Added DHL account parcel-list polling in addition to manual tracking numbers.
+
 ## 0.1.3
 
 - Fixed local Home Assistant app builds by using the same Home Assistant base Python image layout as the other UGSo apps.

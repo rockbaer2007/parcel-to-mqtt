@@ -1,5 +1,5 @@
 name: Parcel to MQTT
-version: "0.1.3"
+version: "0.1.4"
 slug: parcel_to_mqtt
 description: Publish parcel tracking data to Home Assistant via MQTT Discovery
 url: https://github.com/rockbaer2007/parcel-to-mqtt
@@ -16,6 +16,7 @@ services:
   - mqtt:need
 options:
   dhl_tracking_numbers: ""
+  dhl_login_code: ""
   hermes_tracking_numbers: ""
   gls_tracking_numbers: ""
   gls_postal_code: ""
@@ -24,6 +25,7 @@ options:
   log_response_details: false
 schema:
   dhl_tracking_numbers: str
+  dhl_login_code: password
   hermes_tracking_numbers: str
   gls_tracking_numbers: str
   gls_postal_code: str
