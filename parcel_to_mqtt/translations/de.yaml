@@ -2,6 +2,15 @@ configuration:
   dhl_tracking_numbers:
     name: DHL Sendungsnummern
     description: Eine oder mehrere DHL-Sendungsnummern, mit Komma getrennt.
+  hermes_tracking_numbers:
+    name: Hermes Sendungsnummern
+    description: Eine oder mehrere Hermes-Sendungsnummern, mit Komma getrennt.
+  gls_tracking_numbers:
+    name: GLS Sendungsnummern
+    description: Eine oder mehrere GLS-Sendungsnummern, mit Komma getrennt. GLS ist vorbereitet, aber noch nicht aktiv.
+  gls_postal_code:
+    name: GLS Postleitzahl
+    description: Liefer-Postleitzahl fuer GLS-Sendungen.
   interval:
     name: Aktualisierungsintervall in Minuten
     description: Abstand zwischen den Abfragen.

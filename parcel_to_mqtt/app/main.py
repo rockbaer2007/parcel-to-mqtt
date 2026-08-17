@@ -6,7 +6,7 @@ import os
 import signal
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,6 +23,9 @@ MAX_DEFAULT_PARCELS = 6
 @dataclass(frozen=True)
 class Options:
     dhl_tracking_numbers: list[str]
+    hermes_tracking_numbers: list[str]
+    gls_tracking_numbers: list[str]
+    gls_postal_code: str
     interval: int
     max_parcels: int
     log_response_details: bool
@@ -46,6 +49,26 @@ class Parcel:
     last_event_time: str
     destination: str
     raw: dict[str, Any]
+
+
+class ParcelPoller:
+    def __init__(self, options: Options) -> None:
+        self.options = options
+        self.clients = [
+            DhlClient(options),
+            HermesClient(options),
+            GlsClient(options),
+        ]
+
+    def poll(self) -> list[Parcel]:
+        parcels: list[Parcel] = []
+        for client in self.clients:
+            parcels.extend(client.poll())
+        indexed = [
+            replace(parcel, index=index)
+            for index, parcel in enumerate(parcels[: self.options.max_parcels], start=1)
+        ]
+        return indexed
 
 
 class DhlClient:
@@ -87,14 +110,13 @@ class DhlClient:
                 shipment for shipment in shipments
                 if value_at(shipment, ["sendungsinfo", "sendungsliste"]) != "ARCHIVIERT"
             ]
-            parcels = [self.normalize_parcel(index, item) for index, item in enumerate(active_shipments, start=1)]
-            return parcels[: self.options.max_parcels]
+            return [self.normalize_parcel(item) for item in active_shipments]
         except Exception as exc:
             LOG.warning("Could not fetch DHL parcel data: %s", exc)
             return []
 
     @staticmethod
-    def normalize_parcel(index: int, item: dict[str, Any]) -> Parcel:
+    def normalize_parcel(item: dict[str, Any]) -> Parcel:
         status_text = first_text(
             value_at(item, ["sendungsdetails", "sendungsverlauf", "kurzStatus"]),
             value_at(item, ["sendungsdetails", "sendungsverlauf", "status"]),
@@ -103,7 +125,7 @@ class DhlClient:
         last_event, last_event_time = dhl_last_event(item)
         status_group = normalize_status_group(f"{status_text} {last_event}")
         return Parcel(
-            index=index,
+            index=0,
             tracking_number=str(item.get("id") or ""),
             carrier="DHL",
             status=status_text or human_status(status_group),
@@ -113,6 +135,79 @@ class DhlClient:
             destination=str(value_at(item, ["sendungsinfo", "zielland"]) or ""),
             raw=item,
         )
+
+
+class HermesClient:
+    def __init__(self, options: Options) -> None:
+        self.options = options
+        self.session = requests.Session()
+        self.session.headers.update({
+            "accept": "application/json",
+            "x-language": "de",
+            "referer": "https://www.myhermes.de/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+
+    def poll(self) -> list[Parcel]:
+        parcels = []
+        for tracking_number in self.options.hermes_tracking_numbers:
+            try:
+                response = self.session.get(
+                    f"https://api.my-deliveries.de/tnt/v2/shipments/search/{tracking_number}",
+                    timeout=30,
+                )
+                if response.status_code in (400, 404):
+                    LOG.info("Hermes parcel %s is unknown or not scanned yet", tracking_number)
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                if self.options.log_response_details:
+                    LOG.info("Hermes %s returned: %s", tracking_number, json.dumps(data, ensure_ascii=False, sort_keys=True)[:8000])
+                if isinstance(data, list) and data and isinstance(data[0], dict):
+                    parcels.append(self.normalize_parcel(tracking_number, data[0]))
+            except Exception as exc:
+                LOG.warning("Could not fetch Hermes parcel %s: %s", tracking_number, exc)
+        return parcels
+
+    @staticmethod
+    def normalize_parcel(tracking_number: str, item: dict[str, Any]) -> Parcel:
+        history = item.get("parcelProgress")
+        latest = history[0] if isinstance(history, list) and history and isinstance(history[0], dict) else {}
+        raw_status = first_text(latest.get("parcelStatus"), latest.get("status"), item.get("status"), item.get("state"))
+        last_event = first_text(latest.get("historyText"), latest.get("status"), item.get("statusText"), raw_status)
+        status_group = normalize_status_group(f"{raw_status} {last_event}")
+        return Parcel(
+            index=0,
+            tracking_number=first_text(item.get("barcode"), item.get("trackingCode"), tracking_number),
+            carrier="Hermes",
+            status=last_event or human_status(status_group),
+            status_group=status_group,
+            last_event=last_event,
+            last_event_time=first_text(latest.get("timestamp"), latest.get("date"), item.get("eta")),
+            destination=first_text(
+                value_at(item, ["recipient", "city"]),
+                value_at(item, ["receiver", "city"]),
+                value_at(item, ["deliveryAddress", "city"]),
+            ),
+            raw=item,
+        )
+
+
+class GlsClient:
+    def __init__(self, options: Options) -> None:
+        self.options = options
+        self._warned = False
+
+    def poll(self) -> list[Parcel]:
+        if not self.options.gls_tracking_numbers:
+            return []
+        if not self.options.gls_postal_code:
+            LOG.warning("GLS tracking numbers are configured, but gls_postal_code is empty")
+            return []
+        if not self._warned:
+            LOG.warning("GLS direct tracking is prepared but not active yet; GLS Germany needs a guest bearer session before polling can be enabled")
+            self._warned = True
+        return []
 
 
 class MqttPublisher:
@@ -177,9 +272,12 @@ class MqttPublisher:
         })
         counters = {
             "total": ("Parcel Gesamt", "mdi:package-variant-closed"),
+            "registered": ("Parcel Angemeldet", "mdi:package-plus"),
             "in_transit": ("Parcel Unterwegs", "mdi:truck-fast"),
             "out_for_delivery": ("Parcel In Zustellung", "mdi:truck-delivery"),
+            "at_pickup_point": ("Parcel Abholstelle", "mdi:store-marker"),
             "delivered": ("Parcel Zugestellt", "mdi:package-check"),
+            "returning": ("Parcel Ruecksendung", "mdi:package-up"),
             "exception": ("Parcel Problem", "mdi:package-alert"),
             "unknown": ("Parcel Unbekannt", "mdi:package-question"),
         }
@@ -262,9 +360,15 @@ def normalize_status_group(status: str) -> str:
     compact = text.replace("_", "")
     if ("wird" in text and "zugestellt" in text) or "in_zustellung" in text or "out_for_delivery" in text or "outfordelivery" in compact:
         return "out_for_delivery"
+    if "pickup" in text or "abhol" in text or "paketshop" in text or "parcelshop" in text or "filiale" in text:
+        return "at_pickup_point"
     if "delivered" in text or "zugestellt" in text or "ausgeliefert" in text:
         return "delivered"
-    if "zustellung" in text or "pickup" in text:
+    if "return" in text or "retoure" in text or "rueck" in text or "zurück" in text:
+        return "returning"
+    if "registered" in text or "angekuendigt" in text or "angekündigt" in text or "elektronisch" in text or "daten" in text:
+        return "registered"
+    if "zustellung" in text:
         return "out_for_delivery"
     if "transit" in text or "transport" in text or "unterwegs" in text or "bearbeitung" in text or "info_received" in text or "inforeceived" in compact:
         return "in_transit"
@@ -275,9 +379,12 @@ def normalize_status_group(status: str) -> str:
 
 def human_status(group: str) -> str:
     return {
+        "registered": "Angemeldet",
         "delivered": "Zugestellt",
+        "at_pickup_point": "Abholstelle",
         "out_for_delivery": "In Zustellung",
         "in_transit": "Unterwegs",
+        "returning": "Ruecksendung",
         "exception": "Problem",
         "unknown": "Unbekannt",
     }.get(group, "Unbekannt")
@@ -286,9 +393,12 @@ def human_status(group: str) -> str:
 def parcel_summary(parcels: list[Parcel]) -> dict[str, int]:
     summary = {
         "total": len(parcels),
+        "registered": 0,
         "in_transit": 0,
         "out_for_delivery": 0,
+        "at_pickup_point": 0,
         "delivered": 0,
+        "returning": 0,
         "exception": 0,
         "unknown": 0,
     }
@@ -323,7 +433,7 @@ def empty_parcel_attributes(index: int) -> dict[str, Any]:
     }
 
 
-def parse_dhl_numbers(value: Any) -> list[str]:
+def parse_tracking_numbers(value: Any) -> list[str]:
     if isinstance(value, list):
         items = value
     else:
@@ -336,6 +446,10 @@ def parse_dhl_numbers(value: Any) -> list[str]:
     return result
 
 
+def parse_dhl_numbers(value: Any) -> list[str]:
+    return parse_tracking_numbers(value)
+
+
 def load_options() -> Options:
     raw = {}
     options_file = os.environ.get("OPTIONS_FILE", "/data/options.json")
@@ -344,7 +458,10 @@ def load_options() -> Options:
             raw = json.load(handle)
     mqtt = load_mqtt_service()
     return Options(
-        dhl_tracking_numbers=parse_dhl_numbers(raw.get("dhl_tracking_numbers", "")),
+        dhl_tracking_numbers=parse_tracking_numbers(raw.get("dhl_tracking_numbers", "")),
+        hermes_tracking_numbers=parse_tracking_numbers(raw.get("hermes_tracking_numbers", "")),
+        gls_tracking_numbers=parse_tracking_numbers(raw.get("gls_tracking_numbers", "")),
+        gls_postal_code=str(raw.get("gls_postal_code", "")).strip(),
         interval=max(30, int(raw.get("interval", 60))),
         max_parcels=max(1, min(20, int(raw.get("max_parcels", MAX_DEFAULT_PARCELS)))),
         log_response_details=bool(raw.get("log_response_details", False)),
@@ -378,7 +495,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_args: stop_event.set())
     options = load_options()
     publisher = MqttPublisher(options)
-    client = DhlClient(options)
+    client = ParcelPoller(options)
     publisher.connect()
     try:
         while not stop_event.is_set():

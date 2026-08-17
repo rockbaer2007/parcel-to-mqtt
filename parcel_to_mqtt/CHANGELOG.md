@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- Added direct Hermes Germany parcel tracking.
+- Added shared parcel status groups for registered, pickup point and returning.
+- Prepared GLS configuration fields while keeping GLS polling disabled until the required guest bearer session is implemented.
+- Added attribution for the ha-parcel-integrations status model inspiration.
+
 ## 0.1.1
 
 - Removed 17TRACK API support because the API key can be paid.

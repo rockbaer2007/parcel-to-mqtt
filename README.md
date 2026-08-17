@@ -4,10 +4,13 @@
 
 Home Assistant app repository for publishing parcel tracking data through MQTT Discovery.
 
-The first version uses direct DHL parcel tracking with configured DHL tracking numbers. Home Assistant notifications can be built with normal Home Assistant automations from the generated MQTT entities.
+The current version uses direct DHL and Hermes parcel tracking with configured tracking numbers. Home Assistant notifications can be built with normal Home Assistant automations from the generated MQTT entities.
 
 Adapted from and inspired by the original ioBroker adapter:
 [TA2k/ioBroker.parcel](https://github.com/TA2k/ioBroker.parcel)
+
+The shared parcel status model is inspired by the MIT licensed Home Assistant parcel integrations:
+[ha-parcel-integrations](https://github.com/ha-parcel-integrations)
 
 ## Installation
 
@@ -23,22 +26,25 @@ Adapted from and inspired by the original ioBroker adapter:
    ```
 
 5. Install **Parcel to MQTT**.
-6. Configure the DHL tracking numbers.
+6. Configure DHL and/or Hermes tracking numbers.
 7. Start the app.
 
 ## Features
 
 - Direct DHL parcel tracking.
-- Manual DHL tracking numbers as comma-separated list.
+- Direct Hermes Germany parcel tracking.
+- Manual tracking numbers as comma-separated lists.
+- GLS configuration is prepared, but GLS Germany polling is not active yet because it needs a guest bearer session.
+- DPD and UPS are planned for a later step once a reliable direct, account or official API path is chosen.
 - MQTT Discovery connection sensor.
-- Parcel counters for all, in transit, in delivery, delivered, exception and unknown.
+- Parcel counters for all, registered, in transit, in delivery, pickup point, delivered, returning, exception and unknown.
 - JSON sensor with all parcel data.
 - Up to six parcel slot sensors with provider, status, last event and tracking number attributes.
 - Home Assistant notifications through normal HA automations.
 
 ## Status
 
-This is an early testable MVP. More providers can be added later.
+This is an early testable MVP. DHL and Hermes are active. GLS, DPD and UPS are the next provider targets.
 
 ## License
 
