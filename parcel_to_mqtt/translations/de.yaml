@@ -1,0 +1,16 @@
+configuration:
+  track17_api_key:
+    name: 17TRACK API-Key
+    description: API-Key fuer die 17TRACK Sendungsverfolgung.
+  tracking_numbers:
+    name: Sendungsnummern
+    description: Eine oder mehrere Sendungsnummern, mit Komma getrennt.
+  interval:
+    name: Aktualisierungsintervall in Minuten
+    description: Abstand zwischen den Abfragen.
+  max_parcels:
+    name: Maximale Paket-Entitaeten
+    description: Anzahl der Paket-Slots, die per MQTT Discovery angelegt werden.
+  log_response_details:
+    name: Antwortdetails protokollieren
+    description: Schreibt Rohantworten zur Fehlersuche ins Log.

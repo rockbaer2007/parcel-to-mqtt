@@ -1,0 +1,16 @@
+configuration:
+  track17_api_key:
+    name: 17TRACK API key
+    description: API key for 17TRACK parcel tracking.
+  tracking_numbers:
+    name: Tracking numbers
+    description: One or more tracking numbers separated by commas.
+  interval:
+    name: Update interval in minutes
+    description: Time between provider polls.
+  max_parcels:
+    name: Maximum parcel entities
+    description: Number of parcel slots created through MQTT Discovery.
+  log_response_details:
+    name: Log response details
+    description: Write raw responses to the app log for troubleshooting.

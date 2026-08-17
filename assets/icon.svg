@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Parcel to MQTT icon</title>
+  <desc id="desc">Parcel package with MQTT network nodes.</desc>
+  <defs>
+    <linearGradient id="box" x1="112" y1="112" x2="384" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="mqtt" x1="250" y1="238" x2="420" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="432" height="432" rx="96" fill="#111827"/>
+  <path d="M126 176 256 108l130 68v152l-130 76-130-76z" fill="url(#box)"/>
+  <path d="m126 176 130 72 130-72M256 248v156M190 142l130 72" fill="none" stroke="#ffedd5" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+  <path d="M265 308h72m0 0 52-52m-52 52 52 52" fill="none" stroke="url(#mqtt)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="265" cy="308" r="24" fill="#111827" stroke="#22c55e" stroke-width="16"/>
+  <circle cx="389" cy="256" r="24" fill="#111827" stroke="#22c55e" stroke-width="16"/>
+  <circle cx="389" cy="360" r="24" fill="#111827" stroke="#0ea5e9" stroke-width="16"/>
+</svg>
