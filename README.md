@@ -47,6 +47,16 @@ The shared parcel status model is inspired by the MIT licensed Home Assistant pa
 
 This is an early testable MVP. DHL and Hermes are active. GLS, DPD and UPS are the next provider targets.
 
+## Provider roadmap
+
+The ioBroker adapter settings are used as a reference for future provider login flows:
+
+- DHL: active through `dhllogin://` browser login code plus optional manual tracking numbers.
+- Amazon: planned with e-mail, password, optional OTP token and a cookie reset option. Captchas can still require manual intervention.
+- Hermes: currently active by manual tracking number; account login with app username and app password is planned.
+- UPS: planned with app username and app password.
+- GLS and DPD: planned after the stable login/session flow is mapped.
+
 ## DHL account login
 
 Open the DHL login URL, sign in, copy the failed `dhllogin://...` redirect from the browser developer console and paste it into `dhl_login_code`:

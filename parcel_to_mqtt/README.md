@@ -40,3 +40,11 @@ log_response_details: false
 `dhl_tracking_numbers` and `hermes_tracking_numbers` accept comma-separated lists.
 GLS configuration is already present, but GLS Germany polling is not active yet because it needs a guest bearer session.
 Notifications should be created as Home Assistant automations using the generated entities.
+
+## Provider roadmap
+
+- DHL: active through `dhllogin://` browser login code plus optional manual tracking numbers.
+- Amazon: planned with e-mail, password, optional OTP token and a cookie reset option.
+- Hermes: currently active by manual tracking number; account login with app username and app password is planned.
+- UPS: planned with app username and app password.
+- GLS and DPD: planned after the stable login/session flow is mapped.
