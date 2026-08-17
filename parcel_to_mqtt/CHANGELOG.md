@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+- Added masked provider request/response debug logging when `log_response_details` is enabled.
+- Added `/data/provider_debug.log` with a maximum of 100 retained JSON lines.
+
 ## 0.1.5
 
 - Added the DHL login URL as a visible configuration copy helper.

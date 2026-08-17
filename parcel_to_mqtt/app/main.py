@@ -19,6 +19,8 @@ LOG = logging.getLogger("parcel_to_mqtt")
 DEFAULT_BASE_TOPIC = "parcel"
 DEFAULT_DISCOVERY_PREFIX = "homeassistant"
 MAX_DEFAULT_PARCELS = 6
+DEBUG_LOG_FILE = "/data/provider_debug.log"
+DEBUG_LOG_MAX_LINES = 100
 DHL_AUTH_URL = (
     "https://login.dhl.de/af5f9bb6-27ad-4af4-9445-008e7a5cddb8/login/authorize"
     "?redirect_uri=dhllogin://de.deutschepost.dhl/login"
@@ -123,8 +125,18 @@ class DhlClient:
             )
             response.raise_for_status()
             data = response.json()
-            if self.options.log_response_details:
-                LOG.info("DHL tracking returned: %s", json.dumps(data, ensure_ascii=False, sort_keys=True)[:8000])
+            debug_provider_exchange(
+                self.options,
+                provider="DHL",
+                phase="tracking",
+                request_data={
+                    "method": "GET",
+                    "url": response.url,
+                    "tracking_numbers": tracking_numbers,
+                },
+                response=response,
+                response_data=data,
+            )
             shipments = data.get("sendungen", []) if isinstance(data, dict) else []
             if not isinstance(shipments, list):
                 return []
@@ -150,8 +162,18 @@ class DhlClient:
             )
             response.raise_for_status()
             data = response.json()
-            if self.options.log_response_details:
-                LOG.info("DHL account list returned: %s", json.dumps(data, ensure_ascii=False, sort_keys=True)[:8000])
+            debug_provider_exchange(
+                self.options,
+                provider="DHL",
+                phase="account_list",
+                request_data={
+                    "method": "GET",
+                    "url": response.url,
+                    "account_session": bool(session_data.get("id_token")),
+                },
+                response=response,
+                response_data=data,
+            )
             shipments = data.get("sendungen", []) if isinstance(data, dict) else []
             if not isinstance(shipments, list):
                 return []
@@ -203,6 +225,23 @@ class DhlClient:
             )
             response.raise_for_status()
             session_data = response.json()
+            debug_provider_exchange(
+                self.options,
+                provider="DHL",
+                phase="login",
+                request_data={
+                    "method": "POST",
+                    "url": response.url,
+                    "body": {
+                        "redirect_uri": "dhllogin://de.deutschepost.dhl/login",
+                        "grant_type": "authorization_code",
+                        "code_verifier": DHL_CODE_VERIFIER,
+                        "code": code,
+                    },
+                },
+                response=response,
+                response_data=session_data,
+            )
             self.save_session(session_data)
             LOG.info("DHL account login successful. The stored refresh token will be reused on the next starts.")
             return session_data
@@ -231,6 +270,22 @@ class DhlClient:
             )
             response.raise_for_status()
             session_data = response.json()
+            debug_provider_exchange(
+                self.options,
+                provider="DHL",
+                phase="refresh",
+                request_data={
+                    "method": "POST",
+                    "url": response.url,
+                    "body": {
+                        "client_id": DHL_CLIENT_ID,
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                    },
+                },
+                response=response,
+                response_data=session_data,
+            )
             self.save_session(session_data)
             return session_data
         except Exception as exc:
@@ -302,8 +357,18 @@ class HermesClient:
                     continue
                 response.raise_for_status()
                 data = response.json()
-                if self.options.log_response_details:
-                    LOG.info("Hermes %s returned: %s", tracking_number, json.dumps(data, ensure_ascii=False, sort_keys=True)[:8000])
+                debug_provider_exchange(
+                    self.options,
+                    provider="Hermes",
+                    phase="tracking",
+                    request_data={
+                        "method": "GET",
+                        "url": response.url,
+                        "tracking_number": tracking_number,
+                    },
+                    response=response,
+                    response_data=data,
+                )
                 if isinstance(data, list) and data and isinstance(data[0], dict):
                     parcels.append(self.normalize_parcel(tracking_number, data[0]))
             except Exception as exc:
@@ -478,6 +543,75 @@ def first_text(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def debug_provider_exchange(
+    options: Options,
+    provider: str,
+    phase: str,
+    request_data: dict[str, Any],
+    response: requests.Response | None = None,
+    response_data: Any = None,
+) -> None:
+    if not options.log_response_details:
+        return
+    payload = {
+        "time": datetime.now(timezone.utc).isoformat(),
+        "provider": provider,
+        "phase": phase,
+        "request": redact_debug_value(request_data),
+        "response": {
+            "status_code": response.status_code if response is not None else None,
+            "url": response.url if response is not None else "",
+            "body": redact_debug_value(response_data),
+        },
+    }
+    line = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    LOG.info("Provider debug %s/%s: %s", provider, phase, line[:8000])
+    append_debug_line(line)
+
+
+def append_debug_line(line: str) -> None:
+    try:
+        existing: list[str] = []
+        if os.path.exists(DEBUG_LOG_FILE):
+            with open(DEBUG_LOG_FILE, encoding="utf-8") as handle:
+                existing = handle.read().splitlines()
+        existing.append(line)
+        with open(DEBUG_LOG_FILE, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(existing[-DEBUG_LOG_MAX_LINES:]) + "\n")
+    except Exception as exc:
+        LOG.warning("Could not write provider debug log: %s", exc)
+
+
+def redact_debug_value(value: Any) -> Any:
+    sensitive_names = {
+        "authorization",
+        "code",
+        "code_verifier",
+        "dhl_login_code",
+        "id_token",
+        "refresh_token",
+        "access_token",
+        "token",
+        "password",
+        "cookie",
+        "dhli",
+    }
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text.lower() in sensitive_names or "token" in key_text.lower() or "password" in key_text.lower():
+                redacted[key] = "***"
+            else:
+                redacted[key] = redact_debug_value(item)
+        return redacted
+    if isinstance(value, list):
+        return [redact_debug_value(item) for item in value]
+    if isinstance(value, str) and len(value) > 2000:
+        return value[:2000] + "...<truncated>"
+    return value
 
 
 def dhl_last_event(item: dict[str, Any]) -> tuple[str, str]:

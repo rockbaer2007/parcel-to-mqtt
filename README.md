@@ -42,6 +42,7 @@ The shared parcel status model is inspired by the MIT licensed Home Assistant pa
 - JSON sensor with all parcel data.
 - Up to six parcel slot sensors with provider, status, last event and tracking number attributes.
 - Home Assistant notifications through normal HA automations.
+- Optional masked provider request/response debug log in `/data/provider_debug.log` with the last 100 lines.
 
 ## Status
 
@@ -71,6 +72,10 @@ https://login.dhl.de/af5f9bb6-27ad-4af4-9445-008e7a5cddb8/login/authorize?redire
 ```
 
 After the first successful login the app stores the refresh token in `/data/dhl_session.json` and reuses it on restart.
+
+## Debug logging
+
+Enable `log_response_details` to write masked provider requests and responses to the normal add-on log and to `/data/provider_debug.log`. The debug file keeps at most 100 JSON lines. Tokens, passwords, authorization headers and DHL login codes are masked before writing.
 
 ## License
 

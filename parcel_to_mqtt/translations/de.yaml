@@ -25,4 +25,4 @@ configuration:
     description: Anzahl der Paket-Slots, die per MQTT Discovery angelegt werden.
   log_response_details:
     name: Antwortdetails protokollieren
-    description: Schreibt Rohantworten zur Fehlersuche ins Log.
+    description: Schreibt Provider-Anfragen und Antworten maskiert ins Add-on-Log und nach /data/provider_debug.log. Die Datei behaelt maximal 100 Zeilen.

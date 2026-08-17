@@ -41,6 +41,7 @@ log_response_details: false
 After the first successful login the app stores the refresh token in `/data/dhl_session.json` and reads the DHL account parcel list automatically.
 `dhl_tracking_numbers` and `hermes_tracking_numbers` accept comma-separated lists.
 GLS configuration is already present, but GLS Germany polling is not active yet because it needs a guest bearer session.
+`log_response_details` writes masked provider requests and responses to the add-on log and `/data/provider_debug.log`. The file keeps at most 100 JSON lines.
 Notifications should be created as Home Assistant automations using the generated entities.
 
 ## Provider roadmap

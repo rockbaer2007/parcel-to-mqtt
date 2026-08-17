@@ -25,4 +25,4 @@ configuration:
     description: Number of parcel slots created through MQTT Discovery.
   log_response_details:
     name: Log response details
-    description: Write raw responses to the app log for troubleshooting.
+    description: Writes masked provider requests and responses to the app log and /data/provider_debug.log. The file keeps at most 100 lines.
