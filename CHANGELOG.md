@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Fixed local Home Assistant app builds by using the same Home Assistant base Python image layout as the other UGSo apps.
+
 ## 0.1.2
 
 - Added direct Hermes Germany parcel tracking.
