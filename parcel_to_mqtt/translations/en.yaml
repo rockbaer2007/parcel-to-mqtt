@@ -2,9 +2,12 @@ configuration:
   dhl_tracking_numbers:
     name: DHL tracking numbers
     description: Optional manual DHL tracking numbers separated by commas.
+  dhl_login_url:
+    name: DHL login URL
+    description: Open this URL in Chrome, sign in to DHL, open the developer console, copy the failed dhllogin:// redirect and paste it into DHL login code below.
   dhl_login_code:
     name: DHL login code
-    description: Optional dhllogin:// URL from the DHL browser login. The DHL account parcel list is read automatically afterwards.
+    description: Paste the complete dhllogin:// URL from the DHL browser login here. The DHL account parcel list is read automatically afterwards.
   hermes_tracking_numbers:
     name: Hermes tracking numbers
     description: One or more Hermes tracking numbers separated by commas.

@@ -2,9 +2,12 @@ configuration:
   dhl_tracking_numbers:
     name: DHL Sendungsnummern
     description: Optionale manuelle DHL-Sendungsnummern, mit Komma getrennt.
+  dhl_login_url:
+    name: DHL Login-URL
+    description: Diese URL im Chrome-Browser oeffnen, bei DHL einloggen, Developer Console oeffnen, die fehlgeschlagene dhllogin:// Weiterleitung kopieren und unten bei DHL Login-Code einfuegen.
   dhl_login_code:
     name: DHL Login-Code
-    description: Optionale dhllogin:// URL aus dem DHL-Browser-Login. Danach wird die DHL-Kontoliste automatisch gelesen.
+    description: Hier die komplette dhllogin:// URL aus dem DHL-Browser-Login einfuegen. Danach wird die DHL-Kontoliste automatisch gelesen.
   hermes_tracking_numbers:
     name: Hermes Sendungsnummern
     description: Eine oder mehrere Hermes-Sendungsnummern, mit Komma getrennt.

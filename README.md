@@ -59,7 +59,12 @@ The ioBroker adapter settings are used as a reference for future provider login 
 
 ## DHL account login
 
-Open the DHL login URL, sign in, copy the failed `dhllogin://...` redirect from the browser developer console and paste it into `dhl_login_code`:
+The app configuration contains `dhl_login_url` as a copy helper. Use it like this:
+
+1. Open `dhl_login_url` in the Chrome browser and sign in to DHL.
+2. Open the developer console with `F12`.
+3. In the console tab, copy the failed `dhllogin://...` redirect URL.
+4. Paste the complete URL into `dhl_login_code` and save.
 
 ```text
 https://login.dhl.de/af5f9bb6-27ad-4af4-9445-008e7a5cddb8/login/authorize?redirect_uri=dhllogin://de.deutschepost.dhl/login&state=eyJycyI6dHJ1ZSwicnYiOmZhbHNlLCJmaWQiOiJhcHAtbG9naW4tbWVoci1mb290ZXIiLCJoaWQiOiJhcHAtbG9naW4tbWVoci1oZWFkZXIiLCJycCI6ZmFsc2V9&client_id=83471082-5c13-4fce-8dcb-19d2a3fca413&response_type=code&scope=openid%20offline_access&claims=%7B%22id_token%22:%7B%22email%22:null,%22post_number%22:null,%22twofa%22:null,%22service_mask%22:null,%22deactivate_account%22:null,%22last_login%22:null,%22customer_type%22:null,%22display_name%22:null,%22data_confirmation_required%22:null%7D%7D&nonce=&login_hint=&prompt=login&ui_locales=de-DE&code_challenge=MAhrhXXZP-Owy-R7ruyB7Fn-Z8ODW6qxCoHg4uXELCw&code_challenge_method=S256

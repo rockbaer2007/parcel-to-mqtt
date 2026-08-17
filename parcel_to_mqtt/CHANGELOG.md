@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+
+- Added the DHL login URL as a visible configuration copy helper.
+- Added the DHL browser-login steps to the configuration descriptions and README.
+
 ## 0.1.4
 
 - Added optional DHL account login through a `dhllogin://` browser redirect URL.

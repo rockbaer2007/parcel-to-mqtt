@@ -27,6 +27,7 @@ Each parcel slot exposes tracking number, carrier, status, last event, last even
 
 ```yaml
 dhl_tracking_numbers: "00340434123456789012,00340434123456789013"
+dhl_login_url: "https://login.dhl.de/..."
 dhl_login_code: ""
 hermes_tracking_numbers: "12345678901234"
 gls_tracking_numbers: ""
@@ -36,7 +37,8 @@ max_parcels: 6
 log_response_details: false
 ```
 
-`dhl_login_code` accepts the `dhllogin://...` redirect URL from the DHL browser login. After the first successful login the app stores the refresh token in `/data/dhl_session.json` and reads the DHL account parcel list automatically.
+`dhl_login_url` is a copy helper for the DHL browser login. Open it in Chrome, sign in to DHL, open the developer console with `F12`, copy the failed `dhllogin://...` redirect URL and paste it into `dhl_login_code`.
+After the first successful login the app stores the refresh token in `/data/dhl_session.json` and reads the DHL account parcel list automatically.
 `dhl_tracking_numbers` and `hermes_tracking_numbers` accept comma-separated lists.
 GLS configuration is already present, but GLS Germany polling is not active yet because it needs a guest bearer session.
 Notifications should be created as Home Assistant automations using the generated entities.
