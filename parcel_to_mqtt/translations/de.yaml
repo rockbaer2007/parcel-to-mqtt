@@ -1,10 +1,7 @@
 configuration:
-  track17_api_key:
-    name: 17TRACK API-Key
-    description: API-Key fuer die 17TRACK Sendungsverfolgung.
-  tracking_numbers:
-    name: Sendungsnummern
-    description: Eine oder mehrere Sendungsnummern, mit Komma getrennt.
+  dhl_tracking_numbers:
+    name: DHL Sendungsnummern
+    description: Eine oder mehrere DHL-Sendungsnummern, mit Komma getrennt.
   interval:
     name: Aktualisierungsintervall in Minuten
     description: Abstand zwischen den Abfragen.

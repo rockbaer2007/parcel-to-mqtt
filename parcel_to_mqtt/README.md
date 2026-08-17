@@ -23,12 +23,11 @@ Each parcel slot exposes tracking number, carrier, status, last event, last even
 ## Configuration
 
 ```yaml
-track17_api_key: ""
-tracking_numbers: "00340434123456789012,1Z999AA10123456784"
+dhl_tracking_numbers: "00340434123456789012,00340434123456789013"
 interval: 60
 max_parcels: 6
 log_response_details: false
 ```
 
-`tracking_numbers` accepts a comma-separated list.
+`dhl_tracking_numbers` accepts a comma-separated list.
 Notifications should be created as Home Assistant automations using the generated entities.

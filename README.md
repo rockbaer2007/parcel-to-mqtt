@@ -4,7 +4,7 @@
 
 Home Assistant app repository for publishing parcel tracking data through MQTT Discovery.
 
-The first version uses the 17TRACK API and configured tracking numbers. Home Assistant notifications can be built with normal Home Assistant automations from the generated MQTT entities.
+The first version uses direct DHL parcel tracking with configured DHL tracking numbers. Home Assistant notifications can be built with normal Home Assistant automations from the generated MQTT entities.
 
 Adapted from and inspired by the original ioBroker adapter:
 [TA2k/ioBroker.parcel](https://github.com/TA2k/ioBroker.parcel)
@@ -23,13 +23,13 @@ Adapted from and inspired by the original ioBroker adapter:
    ```
 
 5. Install **Parcel to MQTT**.
-6. Configure the 17TRACK API key and tracking numbers.
+6. Configure the DHL tracking numbers.
 7. Start the app.
 
 ## Features
 
-- 17TRACK API lookup.
-- Manual tracking numbers as comma-separated list.
+- Direct DHL parcel tracking.
+- Manual DHL tracking numbers as comma-separated list.
 - MQTT Discovery connection sensor.
 - Parcel counters for all, in transit, in delivery, delivered, exception and unknown.
 - JSON sensor with all parcel data.

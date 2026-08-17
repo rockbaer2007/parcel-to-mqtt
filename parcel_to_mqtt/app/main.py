@@ -22,8 +22,7 @@ MAX_DEFAULT_PARCELS = 6
 
 @dataclass(frozen=True)
 class Options:
-    track17_api_key: str
-    tracking_numbers: list[str]
+    dhl_tracking_numbers: list[str]
     interval: int
     max_parcels: int
     log_response_details: bool
@@ -49,69 +48,69 @@ class Parcel:
     raw: dict[str, Any]
 
 
-class Track17Client:
+class DhlClient:
     def __init__(self, options: Options) -> None:
         self.options = options
         self.session = requests.Session()
         self.session.headers.update({
-            "17token": options.track17_api_key,
-            "content-type": "application/json",
             "accept": "application/json",
-            "user-agent": "parcel-to-mqtt/0.1.0",
+            "content-type": "application/json",
+            "accept-language": "de-de",
+            "user-agent": (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) "
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+            ),
         })
 
     def poll(self) -> list[Parcel]:
-        if not self.options.track17_api_key or not self.options.tracking_numbers:
+        if not self.options.dhl_tracking_numbers:
             return []
-        self.register_tracking_numbers()
-        return self.get_tracking_info()
-
-    def register_tracking_numbers(self) -> None:
-        payload = [{"number": number} for number in self.options.tracking_numbers]
         try:
-            response = self.session.post("https://api.17track.net/track/v2/register", json=payload, timeout=30)
-            if self.options.log_response_details:
-                LOG.info("17TRACK register returned: %s", response.text[:4000])
-            if response.status_code >= 400:
-                LOG.info("17TRACK register returned HTTP %s: %s", response.status_code, response.text[:500])
-        except Exception as exc:
-            LOG.info("17TRACK register failed: %s", exc)
-
-    def get_tracking_info(self) -> list[Parcel]:
-        payload = [{"number": number} for number in self.options.tracking_numbers]
-        try:
-            response = self.session.post("https://api.17track.net/track/v2/gettrackinfo", json=payload, timeout=30)
+            response = self.session.get(
+                "https://www.dhl.de/int-verfolgen/data/search",
+                params={
+                    "piececode": ",".join(self.options.dhl_tracking_numbers),
+                    "noRedirect": "true",
+                    "language": "de",
+                    "cid": "app",
+                },
+                timeout=30,
+            )
             response.raise_for_status()
             data = response.json()
             if self.options.log_response_details:
-                LOG.info("17TRACK gettrackinfo returned: %s", json.dumps(data, ensure_ascii=False, sort_keys=True)[:8000])
-            accepted = data.get("data", {}).get("accepted", []) if isinstance(data, dict) else []
-            if not isinstance(accepted, list):
+                LOG.info("DHL tracking returned: %s", json.dumps(data, ensure_ascii=False, sort_keys=True)[:8000])
+            shipments = data.get("sendungen", []) if isinstance(data, dict) else []
+            if not isinstance(shipments, list):
                 return []
-            parcels = [self.normalize_parcel(index, item) for index, item in enumerate(accepted, start=1)]
+            active_shipments = [
+                shipment for shipment in shipments
+                if value_at(shipment, ["sendungsinfo", "sendungsliste"]) != "ARCHIVIERT"
+            ]
+            parcels = [self.normalize_parcel(index, item) for index, item in enumerate(active_shipments, start=1)]
             return parcels[: self.options.max_parcels]
         except Exception as exc:
-            LOG.warning("Could not fetch 17TRACK parcel data: %s", exc)
+            LOG.warning("Could not fetch DHL parcel data: %s", exc)
             return []
 
     @staticmethod
     def normalize_parcel(index: int, item: dict[str, Any]) -> Parcel:
-        track_info = item.get("track_info") or {}
-        latest_status = track_info.get("latest_status") or {}
-        latest_event = track_info.get("latest_event") or {}
-        tracking = track_info.get("tracking") or item
-        carrier = carrier_name(track_info)
-        status = str(latest_status.get("status") or latest_status.get("sub_status") or "unknown")
-        status_group = normalize_status_group(status)
+        status_text = first_text(
+            value_at(item, ["sendungsdetails", "sendungsverlauf", "kurzStatus"]),
+            value_at(item, ["sendungsdetails", "sendungsverlauf", "status"]),
+            value_at(item, ["sendungsinfo", "status"]),
+        )
+        last_event, last_event_time = dhl_last_event(item)
+        status_group = normalize_status_group(f"{status_text} {last_event}")
         return Parcel(
             index=index,
-            tracking_number=str(tracking.get("number") or item.get("number") or ""),
-            carrier=carrier,
-            status=human_status(status_group),
+            tracking_number=str(item.get("id") or ""),
+            carrier="DHL",
+            status=status_text or human_status(status_group),
             status_group=status_group,
-            last_event=str(latest_event.get("description") or latest_event.get("location") or ""),
-            last_event_time=str(latest_event.get("time_iso") or latest_event.get("time_utc") or latest_event.get("time") or ""),
-            destination=str((track_info.get("destination_info") or {}).get("country") or ""),
+            last_event=last_event,
+            last_event_time=last_event_time,
+            destination=str(value_at(item, ["sendungsinfo", "zielland"]) or ""),
             raw=item,
         )
 
@@ -225,28 +224,51 @@ class MqttPublisher:
         }
 
 
-def carrier_name(track_info: dict[str, Any]) -> str:
-    provider = track_info.get("provider") or track_info.get("tracking_provider") or {}
-    if isinstance(provider, dict):
-        return str(provider.get("name") or provider.get("key") or "")
-    providers = track_info.get("providers")
-    if isinstance(providers, list) and providers:
-        first = providers[0]
-        if isinstance(first, dict):
-            return str(first.get("name") or first.get("key") or "")
+def value_at(data: Any, path: list[str]) -> Any:
+    current = data
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def first_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
     return ""
+
+
+def dhl_last_event(item: dict[str, Any]) -> tuple[str, str]:
+    history = value_at(item, ["sendungsdetails", "sendungsverlauf"])
+    if isinstance(history, dict):
+        events = history.get("events") or history.get("ereignisse") or history.get("eventsProgressbar")
+        if isinstance(events, list) and events:
+            latest = events[-1] if isinstance(events[-1], dict) else {}
+            return (
+                first_text(latest.get("status"), latest.get("text"), latest.get("description"), latest.get("ort")),
+                first_text(latest.get("datum"), latest.get("zeit"), latest.get("timestamp"), latest.get("time")),
+            )
+    return (
+        first_text(value_at(item, ["sendungsdetails", "sendungsverlauf", "status"]), value_at(item, ["sendungsinfo", "sendungsname"])),
+        first_text(value_at(item, ["sendungsdetails", "sendungsverlauf", "datum"]), value_at(item, ["sendungsdetails", "sendungsverlauf", "zeit"])),
+    )
 
 
 def normalize_status_group(status: str) -> str:
     text = status.lower().replace("-", "_").replace(" ", "_")
     compact = text.replace("_", "")
-    if "delivered" in text:
-        return "delivered"
-    if "out_for_delivery" in text or "outfordelivery" in compact or "pickup" in text:
+    if ("wird" in text and "zugestellt" in text) or "in_zustellung" in text or "out_for_delivery" in text or "outfordelivery" in compact:
         return "out_for_delivery"
-    if "transit" in text or "transport" in text or "info_received" in text or "inforeceived" in compact:
+    if "delivered" in text or "zugestellt" in text or "ausgeliefert" in text:
+        return "delivered"
+    if "zustellung" in text or "pickup" in text:
+        return "out_for_delivery"
+    if "transit" in text or "transport" in text or "unterwegs" in text or "bearbeitung" in text or "info_received" in text or "inforeceived" in compact:
         return "in_transit"
-    if "exception" in text or "expired" in text or "failed" in text:
+    if "exception" in text or "expired" in text or "failed" in text or "problem" in text or "fehler" in text:
         return "exception"
     return "unknown"
 
@@ -301,7 +323,7 @@ def empty_parcel_attributes(index: int) -> dict[str, Any]:
     }
 
 
-def parse_tracking_numbers(value: Any) -> list[str]:
+def parse_dhl_numbers(value: Any) -> list[str]:
     if isinstance(value, list):
         items = value
     else:
@@ -322,8 +344,7 @@ def load_options() -> Options:
             raw = json.load(handle)
     mqtt = load_mqtt_service()
     return Options(
-        track17_api_key=str(raw.get("track17_api_key", "")).strip(),
-        tracking_numbers=parse_tracking_numbers(raw.get("tracking_numbers", "")),
+        dhl_tracking_numbers=parse_dhl_numbers(raw.get("dhl_tracking_numbers", "")),
         interval=max(30, int(raw.get("interval", 60))),
         max_parcels=max(1, min(20, int(raw.get("max_parcels", MAX_DEFAULT_PARCELS)))),
         log_response_details=bool(raw.get("log_response_details", False)),
@@ -357,7 +378,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_args: stop_event.set())
     options = load_options()
     publisher = MqttPublisher(options)
-    client = Track17Client(options)
+    client = DhlClient(options)
     publisher.connect()
     try:
         while not stop_event.is_set():
