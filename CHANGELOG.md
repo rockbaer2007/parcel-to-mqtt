@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7
+
+- Grouped app configuration by provider for accordion-style Home Assistant settings.
+- Added prepared provider sections for GLS, DPD, UPS, Amazon Logistics, Deutsche Post letters and FedEx.
+- Kept DHL and Hermes active while preserving legacy flat option compatibility.
+
 ## 0.1.6
 
 - Added masked provider request/response debug logging when `log_response_details` is enabled.

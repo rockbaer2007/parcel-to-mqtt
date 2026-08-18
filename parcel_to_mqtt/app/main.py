@@ -40,11 +40,23 @@ DHL_SESSION_FILE = "/data/dhl_session.json"
 
 @dataclass(frozen=True)
 class Options:
+    dhl_enabled: bool
     dhl_tracking_numbers: list[str]
     dhl_login_code: str
+    hermes_enabled: bool
     hermes_tracking_numbers: list[str]
+    gls_enabled: bool
     gls_tracking_numbers: list[str]
     gls_postal_code: str
+    dpd_enabled: bool
+    dpd_tracking_numbers: list[str]
+    ups_enabled: bool
+    ups_tracking_numbers: list[str]
+    amazon_enabled: bool
+    deutsche_post_enabled: bool
+    deutsche_post_tracking_numbers: list[str]
+    fedex_enabled: bool
+    fedex_tracking_numbers: list[str]
     interval: int
     max_parcels: int
     log_response_details: bool
@@ -73,11 +85,14 @@ class Parcel:
 class ParcelPoller:
     def __init__(self, options: Options) -> None:
         self.options = options
-        self.clients = [
-            DhlClient(options),
-            HermesClient(options),
-            GlsClient(options),
-        ]
+        self.clients = []
+        if options.dhl_enabled:
+            self.clients.append(DhlClient(options))
+        if options.hermes_enabled:
+            self.clients.append(HermesClient(options))
+        if options.gls_enabled:
+            self.clients.append(GlsClient(options))
+        self.clients.extend(planned_provider_clients(options))
 
     def poll(self) -> list[Parcel]:
         parcels: list[Parcel] = []
@@ -416,6 +431,34 @@ class GlsClient:
         return []
 
 
+class PlannedProviderClient:
+    def __init__(self, provider: str, reason: str) -> None:
+        self.provider = provider
+        self.reason = reason
+        self._warned = False
+
+    def poll(self) -> list[Parcel]:
+        if not self._warned:
+            LOG.warning("%s configuration is prepared, but active polling is not connected yet: %s", self.provider, self.reason)
+            self._warned = True
+        return []
+
+
+def planned_provider_clients(options: Options) -> list[PlannedProviderClient]:
+    clients: list[PlannedProviderClient] = []
+    if options.dpd_enabled:
+        clients.append(PlannedProviderClient("DPD", "waiting for a stable account, session or official API flow"))
+    if options.ups_enabled:
+        clients.append(PlannedProviderClient("UPS", "waiting for a stable account or official API flow"))
+    if options.amazon_enabled:
+        clients.append(PlannedProviderClient("Amazon Logistics", "waiting for a browser/account connector that can handle OTP and captcha steps safely"))
+    if options.deutsche_post_enabled:
+        clients.append(PlannedProviderClient("Deutsche Post letters", "waiting for a stable letter-tracking connector"))
+    if options.fedex_enabled:
+        clients.append(PlannedProviderClient("FedEx", "waiting for a stable direct or official API flow"))
+    return clients
+
+
 class MqttPublisher:
     def __init__(self, options: Options) -> None:
         self.options = options
@@ -733,6 +776,27 @@ def dhl_code_from_url(value: str) -> str:
     return first_text(*(query.get("code") or []))
 
 
+def option_group(raw: dict[str, Any], name: str) -> dict[str, Any]:
+    value = raw.get(name)
+    return value if isinstance(value, dict) else {}
+
+
+def option_value(raw: dict[str, Any], group: str, key: str, legacy_key: str, default: Any = "") -> Any:
+    grouped = option_group(raw, group)
+    if key in grouped:
+        return grouped.get(key)
+    return raw.get(legacy_key, default)
+
+
+def option_bool(raw: dict[str, Any], group: str, key: str, legacy_key: str | None, default: bool) -> bool:
+    grouped = option_group(raw, group)
+    if key in grouped:
+        return bool(grouped.get(key))
+    if legacy_key and legacy_key in raw:
+        return bool(raw.get(legacy_key))
+    return default
+
+
 def load_options() -> Options:
     raw = {}
     options_file = os.environ.get("OPTIONS_FILE", "/data/options.json")
@@ -741,14 +805,26 @@ def load_options() -> Options:
             raw = json.load(handle)
     mqtt = load_mqtt_service()
     return Options(
-        dhl_tracking_numbers=parse_tracking_numbers(raw.get("dhl_tracking_numbers", "")),
-        dhl_login_code=str(raw.get("dhl_login_code", "")).strip(),
-        hermes_tracking_numbers=parse_tracking_numbers(raw.get("hermes_tracking_numbers", "")),
-        gls_tracking_numbers=parse_tracking_numbers(raw.get("gls_tracking_numbers", "")),
-        gls_postal_code=str(raw.get("gls_postal_code", "")).strip(),
-        interval=max(30, int(raw.get("interval", 60))),
-        max_parcels=max(1, min(20, int(raw.get("max_parcels", MAX_DEFAULT_PARCELS)))),
-        log_response_details=bool(raw.get("log_response_details", False)),
+        dhl_enabled=option_bool(raw, "dhl", "enabled", None, True),
+        dhl_tracking_numbers=parse_tracking_numbers(option_value(raw, "dhl", "tracking_numbers", "dhl_tracking_numbers")),
+        dhl_login_code=str(option_value(raw, "dhl", "login_code", "dhl_login_code")).strip(),
+        hermes_enabled=option_bool(raw, "hermes", "enabled", None, True),
+        hermes_tracking_numbers=parse_tracking_numbers(option_value(raw, "hermes", "tracking_numbers", "hermes_tracking_numbers")),
+        gls_enabled=option_bool(raw, "gls", "enabled", None, bool(parse_tracking_numbers(raw.get("gls_tracking_numbers", "")))),
+        gls_tracking_numbers=parse_tracking_numbers(option_value(raw, "gls", "tracking_numbers", "gls_tracking_numbers")),
+        gls_postal_code=str(option_value(raw, "gls", "postal_code", "gls_postal_code")).strip(),
+        dpd_enabled=option_bool(raw, "dpd", "enabled", None, False),
+        dpd_tracking_numbers=parse_tracking_numbers(option_value(raw, "dpd", "tracking_numbers", "dpd_tracking_numbers")),
+        ups_enabled=option_bool(raw, "ups", "enabled", None, False),
+        ups_tracking_numbers=parse_tracking_numbers(option_value(raw, "ups", "tracking_numbers", "ups_tracking_numbers")),
+        amazon_enabled=option_bool(raw, "amazon", "enabled", None, False),
+        deutsche_post_enabled=option_bool(raw, "deutsche_post", "enabled", None, False),
+        deutsche_post_tracking_numbers=parse_tracking_numbers(option_value(raw, "deutsche_post", "tracking_numbers", "deutsche_post_tracking_numbers")),
+        fedex_enabled=option_bool(raw, "fedex", "enabled", None, False),
+        fedex_tracking_numbers=parse_tracking_numbers(option_value(raw, "fedex", "tracking_numbers", "fedex_tracking_numbers")),
+        interval=max(30, int(option_value(raw, "general", "interval", "interval", 60))),
+        max_parcels=max(1, min(20, int(option_value(raw, "general", "max_parcels", "max_parcels", MAX_DEFAULT_PARCELS)))),
+        log_response_details=option_bool(raw, "general", "log_response_details", "log_response_details", False),
         mqtt_host=str(raw.get("mqtt_host") or mqtt.get("host") or "core-mosquitto"),
         mqtt_port=int(raw.get("mqtt_port") or mqtt.get("port") or 1883),
         mqtt_username=str(raw.get("mqtt_username") or mqtt.get("username") or ""),

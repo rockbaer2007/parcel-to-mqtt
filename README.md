@@ -4,7 +4,7 @@
 
 Home Assistant app repository for publishing parcel tracking data through MQTT Discovery.
 
-The current version uses DHL account tracking, optional manual DHL tracking numbers and Hermes parcel tracking. Home Assistant notifications can be built with normal Home Assistant automations from the generated MQTT entities.
+The current version uses DHL account tracking, optional manual DHL tracking numbers and Hermes parcel tracking. The app configuration is grouped by provider so the Home Assistant app page can show compact provider sections. Home Assistant notifications can be built with normal Home Assistant automations from the generated MQTT entities.
 
 Adapted from and inspired by the original ioBroker adapter:
 [TA2k/ioBroker.parcel](https://github.com/TA2k/ioBroker.parcel)
@@ -34,9 +34,10 @@ The shared parcel status model is inspired by the MIT licensed Home Assistant pa
 - DHL account parcel list through the DHL browser login code.
 - Optional direct DHL parcel tracking by manual tracking number.
 - Direct Hermes Germany parcel tracking.
+- Provider-grouped app settings for DHL, Hermes, GLS, DPD, UPS, Amazon Logistics, Deutsche Post letters and FedEx.
 - Manual tracking numbers as comma-separated lists.
 - GLS configuration is prepared, but GLS Germany polling is not active yet because it needs a guest bearer session.
-- DPD and UPS are planned for a later step once a reliable direct, account or official API path is chosen.
+- DPD, UPS, Amazon Logistics, Deutsche Post letters and FedEx are prepared as configuration groups for later active connectors.
 - MQTT Discovery connection sensor.
 - Parcel counters for all, registered, in transit, in delivery, pickup point, delivered, returning, exception and unknown.
 - JSON sensor with all parcel data.
@@ -46,17 +47,19 @@ The shared parcel status model is inspired by the MIT licensed Home Assistant pa
 
 ## Status
 
-This is an early testable MVP. DHL and Hermes are active. GLS, DPD and UPS are the next provider targets.
+This is an early testable MVP. DHL and Hermes are active. GLS, DPD, UPS, Amazon Logistics, Deutsche Post letters and FedEx are visible in the grouped configuration and are prepared for the next connector steps.
 
 ## Provider roadmap
 
 The ioBroker adapter settings are used as a reference for future provider login flows:
 
 - DHL: active through `dhllogin://` browser login code plus optional manual tracking numbers.
-- Amazon: planned with e-mail, password, optional OTP token and a cookie reset option. Captchas can still require manual intervention.
+- Amazon: prepared with e-mail, password and optional OTP token. Captchas can still require manual intervention.
 - Hermes: currently active by manual tracking number; account login with app username and app password is planned.
-- UPS: planned with app username and app password.
-- GLS and DPD: planned after the stable login/session flow is mapped.
+- UPS: prepared with app username, password and manual tracking numbers.
+- GLS: prepared with manual tracking numbers and delivery postal code; polling waits for a stable guest bearer session.
+- DPD: prepared with username, password and manual tracking numbers after the stable login/session flow is mapped.
+- Deutsche Post letters and FedEx: prepared with manual tracking numbers for later connectors.
 
 ## DHL account login
 
